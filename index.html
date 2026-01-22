@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Campus Map</title>
+  <style>
+    :root{
+      /* === LIGHT THEME VARIABLES === */
+      --bg: #ffffff; 
+      --panel: #ffffff; 
+      --text: #1a1a1a; 
+      --muted: #666666;
+      --border: #e0e0e0;
+      --input-bg: #f5f5f7;
+      
+      --accent: #007aff; 
+      --marker: #ffb700; 
+      --danger: #ff3b30; 
+      
+      --shadow: 0 4px 20px rgba(0,0,0,0.1); 
+      --radius: 12px;
+    }
+    
+    *{box-sizing:border-box}
+    
+    body{
+      margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text); 
+      overflow:hidden;
+    }
+    .app{
+      height:100vh;
+      display:grid;
+      grid-template-rows:auto 1fr;
+      overflow:hidden;
+      position: relative;
+    }
+    
+    /* Topbar */
+    .topbar{
+      display:flex; gap:10px; align-items:center; justify-content: center;
+      padding:12px; 
+      position: sticky;
+      top: 0;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border); 
+      z-index:30;
+      flex-wrap: wrap;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+    }
+    .brand{font-weight:700; font-size:18px; letter-spacing:-0.5px; margin-right: 8px; color: #000;}
+    
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      .topbar {
+        padding: 8px;
+        gap: 8px;
+      }
+      .brand {
+        font-size: 16px;
+        width: 100%;
+        text-align: center;
+        margin-right: 0;
+        margin-bottom: 4px;
+      }
+      .searchWrap {
+        flex: 1 1 100%;
+        min-width: 0;
+      }
+      .btn {
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .stage {
+        padding: 20px;
+      }
+    }
+    
+    .btn{
+      border: 1px solid var(--border); background: #fff; color: var(--text);
+      padding: 10px 16px; border-radius: 8px; cursor:pointer; 
+      font-size:14px; font-weight:600;
+      display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+      transition: background 0.1s;
+    }
+    .btn:hover{ background: #f9f9f9; border-color:#ccc; }
+
+    .searchWrap{position:relative; flex:0 1 320px; min-width:200px;}
+    .search{
+      width:100%; padding:10px 12px 10px 38px; border-radius:10px;
+      border: 1px solid var(--border); background: var(--input-bg);
+      color: var(--text); outline:none; font-size:16px;
+    }
+    .searchIcon{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.5}
+    
+    .dropdown{
+      position:absolute; top:46px; left:0; right:0; background: #fff;
+      border: 1px solid var(--border); border-radius:12px; overflow:hidden;
+      box-shadow: var(--shadow); display:none; max-height:50vh; overflow:auto; z-index:50; text-align: left;
+    }
+    .dropdown.show{display:block}
+    .dropItem{ padding:12px 16px; border-bottom:1px solid #f0f0f0; cursor:pointer; }
+    .dropItem:hover{ background: #f5f5f7; }
+
+    /* Map Stage - with elegant padding */
+    .stage{
+      position: relative;
+      overflow: hidden; 
+      background: var(--bg);
+      padding: 40px;
+      touch-action: none; /* Prevent default touch behaviors in stage area */
+    }
+    
+    /* Map container with subtle styling */
+    .mapContainer{
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #ffffff; /* White background for transparent SVG */
+      border-radius: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      cursor: grab;
+      touch-action: none; /* All touch handling done in JS */
+    }
+    .mapContainer.panning { cursor: grabbing; }
+    
+    /* SVG container - crisp at any zoom level */
+    #mapSvgContainer{
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      user-select: none;
+      touch-action: none;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    
+    #mapSvg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* SVG Markers - positioned in SVG coordinate space */
+    .marker-circle {
+      cursor: pointer;
+      transition: r 0.2s ease-out;
+    }
+    .marker-circle:hover {
+      r: 10;
+    }
+    
+    .marker-label {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      fill: #fff;
+      pointer-events: none;
+      user-select: none;
+    }
+    
+    .marker-label-bg {
+      fill: #1a1a1a;
+      rx: 10;
+      ry: 10;
+    }
+    
+    .marker-pin {
+      cursor: pointer;
+    }
+    
+    /* Pulse animation for start marker */
+    @keyframes pulseRed {
+      0% { opacity: 0.6; }
+      50% { opacity: 0; }
+      100% { opacity: 0; }
+    }
+    
+    .pulse-ring {
+      animation: pulseRed 2s infinite;
+    }
+
+    /* Info Panel Popup */
+    .infoPanel {
+      position: fixed;
+      right: 20px;
+      top: 50%;
+      transform: translateY(-50%) translateX(400px);
+      width: 350px;
+      max-height: 80vh;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+      overflow: hidden;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 40;
+    }
+    .infoPanel.show {
+      transform: translateY(-50%) translateX(0);
+    }
+    .infoPanelHeader {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      background: #f8f9fa;
+    }
+    .infoPanelTitle {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 4px 0;
+    }
+    .infoPanelGroup {
+      font-size: 13px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .infoPanelClose {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+    .infoPanelClose:hover {
+      background: rgba(0,0,0,0.05);
+    }
+    .infoPanelBody {
+      padding: 20px;
+      overflow-y: auto;
+      max-height: calc(80vh - 80px);
+    }
+    .infoPanelImage {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      background: #f0f0f0;
+      display: none;
+    }
+    .infoPanelImage.hasImage {
+      display: block;
+    }
+    .infoPanelDescription {
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+    .infoPanelEmpty {
+      color: var(--muted);
+      font-style: italic;
+      text-align: center;
+      padding: 20px;
+    }
+
+    /* Mobile responsive info panel */
+    @media (max-width: 768px) {
+      .infoPanel {
+        right: 10px;
+        left: 10px;
+        width: auto;
+        bottom: 20px;
+        top: auto;
+        transform: translateY(500px);
+        max-height: 60vh;
+      }
+      .infoPanel.show {
+        transform: translateY(0);
+      }
+    }
+
+    /* Modal */
+    .modalBackdrop{
+      position:fixed; inset:0; background:rgba(0,0,0,.4);
+      display:none; align-items:center; justify-content:center; z-index:100;
+      padding: 20px; backdrop-filter: blur(2px);
+    }
+    .modalBackdrop.show{display:flex}
+    .modal{
+      width: 100%; max-width: 800px; height: 85vh; max-height: 800px;
+      border-radius: 16px; background: #fff; box-shadow: var(--shadow);
+      display: flex; flex-direction: column; overflow:hidden;
+    }
+    .modalHead{ padding: 16px 20px; display:flex; align-items:center; border-bottom: 1px solid var(--border); background: #fff; }
+    .modalBody{ flex: 1; overflow: hidden; position: relative; background: #fafafa; }
+    .listBox{
+      height: 100%; overflow-y: auto; padding: 20px; display: grid; gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); align-content: start;
+    }
+    .listItem{
+      padding:16px; border: 1px solid #eee; border-radius:12px; background: #fff; cursor:pointer;
+      display:flex; justify-content:space-between; align-items:center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+      transition: all 0.2s;
+    }
+    .listItem:hover{ border-color: var(--accent); transform: translateY(-1px); }
+    .tag{
+      font-size:11px; font-weight: 600; padding:3px 8px; border-radius:6px;
+      background: #eff6ff; color: var(--accent); margin-right:8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">Waypoints</div>
+      <div class="searchWrap">
+        <span class="searchIcon">🔎</span>
+        <input id="searchInput" class="search" placeholder="Find a place..." autocomplete="off" />
+        <div id="dropdown" class="dropdown"></div>
+      </div>
+      <button class="btn" id="homeBtn">⛶ Fit</button>
+      <button class="btn" id="listBtn">Directory</button>
+    </div>
+
+    <div class="stage">
+      <div class="mapContainer" id="mapContainer">
+        <div id="mapSvgContainer">
+          <svg id="mapSvg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1164.2306 819.62">
+            <image id="mapImage" href="map.svg" width="1164.2306" height="819.62" />
+            <g id="markerLayer"></g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modalBackdrop" id="listModal">
+    <div class="modal">
+      <div class="modalHead">
+        <b style="font-size:1.1rem; color:#000;">Directory</b>
+        <button class="btn" id="closeList" style="margin-left:auto;padding:6px 12px">Close</button>
+      </div>
+      <div class="modalBody">
+        <div id="listBox" class="listBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info Panel -->
+  <div class="infoPanel" id="infoPanel">
+    <div class="infoPanelHeader">
+      <div>
+        <h2 class="infoPanelTitle" id="infoPanelTitle">Location</h2>
+        <div class="infoPanelGroup" id="infoPanelGroup"></div>
+      </div>
+      <button class="infoPanelClose" id="infoPanelClose">×</button>
+    </div>
+    <div class="infoPanelBody">
+      <img class="infoPanelImage" id="infoPanelImage" alt="Location image" />
+      <div class="infoPanelDescription" id="infoPanelDescription"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ---------------------------------------------------------
+  // CONFIGURATION
+  // ---------------------------------------------------------
+  const CONFIG = {
+    showAllMarkers: false  // Set to true to show yellow dots for all locations
+  };
+  
+  const APP_DATA = {
+  "version": 2,
+  "map": {
+    "src": "map.svg",
+    "naturalW": 1164.2306,
+    "naturalH": 819.62
+  },
+  "waypoints": [
+    {
+      "id": "e4f5a32797565819be6922636",
+      "name": "Y56 Stadium",
+      "group": "",
+      "xRel": 0.24401726007812466,
+      "yRel": 0.2643229166666667
+    },
+    {
+      "id": "92b32def23987819be6923c47",
+      "name": "Main Gate",
+      "group": "",
+      "xRel": 0.500505186206874,
+      "yRel": 0.6575868055555556
+    },
+    {
+      "id": "b5bf8e94ec81a19be698353c",
+      "name": "Y56 SAC",
+      "group": "",
+      "xRel": 0.6054810950882704,
+      "yRel": 0.49478231777178444,
+      "description": "This is where we settle student affairs",
+      "image": "",
+      "type": "start"
+    },
+    {
+      "id": "bfa8fffb8026719be6988e01",
+      "name": "LT2",
+      "group": "",
+      "xRel": 0.5516361854443056,
+      "yRel": 0.4692779013840933
+    },
+    {
+      "id": "43676a92e03db19be698e36b",
+      "name": "Maker Space",
+      "group": "",
+      "xRel": 0.42669121758003886,
+      "yRel": 0.48392689581167947
+    }
+  ]
+}
+
+  const el = (id) => document.getElementById(id);
+  const mapContainer = el("mapContainer");
+  const mapSvg = el("mapSvg");
+  const markerLayer = el("markerLayer");
+  const searchInput = el("searchInput");
+  const dropdown = el("dropdown");
+  const listModal = el("listModal");
+  const listBox = el("listBox");
+  const infoPanel = el("infoPanel");
+  const infoPanelTitle = el("infoPanelTitle");
+  const infoPanelGroup = el("infoPanelGroup");
+  const infoPanelImage = el("infoPanelImage");
+  const infoPanelDescription = el("infoPanelDescription");
+
+  // SVG viewBox state - THIS is where the magic happens
+  let viewBox = {
+    x: 0,
+    y: 0,
+    width: APP_DATA.map.naturalW,
+    height: APP_DATA.map.naturalH,
+    originalW: APP_DATA.map.naturalW,
+    originalH: APP_DATA.map.naturalH
+  };
+
+  let state = {
+    selectedId: null,
+    isPanning: false,
+    panStart: {x: 0, y: 0, vbX: 0, vbY: 0},
+    pointers: new Map(),
+    lastPinchDist: null,
+    lastPinchCenter: {x: 0, y: 0},
+    minZoom: 1,
+    maxZoom: 10
+  };
+
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+  // Convert screen coordinates to SVG coordinates
+  function screenToSvg(screenX, screenY) {
+    const rect = mapContainer.getBoundingClientRect();
+    const x = viewBox.x + (screenX - rect.left) * (viewBox.width / rect.width);
+    const y = viewBox.y + (screenY - rect.top) * (viewBox.height / rect.height);
+    return {x, y};
+  }
+  
+  // Create SVG element helper
+  function createSVGElement(tag, attrs = {}) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs).forEach(([key, value]) => {
+      el.setAttribute(key, value);
+    });
+    return el;
+  }
+
+  // Apply viewBox to SVG - this is the smooth, native zoom
+  function applyViewBox() {
+    mapSvg.setAttribute('viewBox', 
+      `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`
+    );
+  }
+
+  // Fit map to container
+  function fitToScreen() {
+    const rect = mapContainer.getBoundingClientRect();
+    const scaleX = rect.width / viewBox.originalW;
+    const scaleY = rect.height / viewBox.originalH;
+    const scale = Math.min(scaleX, scaleY);
+    
+    viewBox.width = rect.width / scale;
+    viewBox.height = rect.height / scale;
+    viewBox.x = (viewBox.originalW - viewBox.width) / 2;
+    viewBox.y = (viewBox.originalH - viewBox.height) / 2;
+    
+    state.minZoom = Math.min(viewBox.width / viewBox.originalW, viewBox.height / viewBox.originalH);
+    
+    applyViewBox();
+  }
+
+  // Zoom centered on a point
+  function zoomAt(factor, centerX, centerY) {
+    const svgPoint = screenToSvg(centerX, centerY);
+    
+    const newWidth = viewBox.width * factor;
+    const newHeight = viewBox.height * factor;
+    
+    // Calculate zoom scale and clamp
+    const currentZoom = viewBox.originalW / viewBox.width;
+    const newZoom = viewBox.originalW / newWidth;
+    const clampedZoom = clamp(newZoom, state.minZoom, state.maxZoom);
+    
+    const actualNewWidth = viewBox.originalW / clampedZoom;
+    const actualNewHeight = viewBox.originalH / clampedZoom;
+    
+    // Keep the point under cursor stationary
+    const relX = (svgPoint.x - viewBox.x) / viewBox.width;
+    const relY = (svgPoint.y - viewBox.y) / viewBox.height;
+    
+    viewBox.width = actualNewWidth;
+    viewBox.height = actualNewHeight;
+    viewBox.x = svgPoint.x - relX * viewBox.width;
+    viewBox.y = svgPoint.y - relY * viewBox.height;
+    
+    // Clamp to bounds
+    viewBox.x = clamp(viewBox.x, 0, viewBox.originalW - viewBox.width);
+    viewBox.y = clamp(viewBox.y, 0, viewBox.originalH - viewBox.height);
+    
+    applyViewBox();
+  }
+
+  // Pan the view
+  function pan(dx, dy) {
+    const rect = mapContainer.getBoundingClientRect();
+    const svgDx = dx * (viewBox.width / rect.width);
+    const svgDy = dy * (viewBox.height / rect.height);
+    
+    viewBox.x = clamp(viewBox.x - svgDx, 0, viewBox.originalW - viewBox.width);
+    viewBox.y = clamp(viewBox.y - svgDy, 0, viewBox.originalH - viewBox.height);
+    
+    applyViewBox();
+  }
+
+  // Highlight waypoint without jumping (but fit to show whole map)
+  function jumpTo(wp) {
+    state.selectedId = wp.id;
+    fitToScreen(); // Auto-fit to show entire map
+    render();
+    showInfoPanel(wp);
+  }
+  
+  // Show info panel for a waypoint
+  function showInfoPanel(wp) {
+    infoPanelTitle.textContent = wp.name || 'Location';
+    infoPanelGroup.textContent = wp.group || '';
+    
+    if (wp.image) {
+      infoPanelImage.src = wp.image;
+      infoPanelImage.classList.add('hasImage');
+    } else {
+      infoPanelImage.classList.remove('hasImage');
+    }
+    
+    if (wp.description) {
+      infoPanelDescription.textContent = wp.description;
+      infoPanelDescription.style.display = 'block';
+    } else {
+      infoPanelDescription.innerHTML = '<div class="infoPanelEmpty">No description available</div>';
+    }
+    
+    infoPanel.classList.add('show');
+  }
+  
+  // Hide info panel
+  function hideInfoPanel() {
+    infoPanel.classList.remove('show');
+  }
+
+  // Render markers as SVG elements
+  function render() {
+    markerLayer.innerHTML = "";
+    
+    APP_DATA.waypoints.forEach(wp => {
+      const isActive = (wp.id === state.selectedId);
+      const isStart = (wp.type === 'start');
+      
+      // Skip rendering if not active, not start, and showAllMarkers is false
+      if (!isActive && !isStart && !CONFIG.showAllMarkers) {
+        return;
+      }
+      
+      const svgX = wp.xRel * viewBox.originalW;
+      const svgY = wp.yRel * viewBox.originalH;
+      
+      const markerGroup = createSVGElement('g', {
+        'data-marker-id': wp.id,
+        'class': 'marker-group'
+      });
+      
+      if (isActive) {
+        // Active marker - pulsing glow effect
+        const glowRing = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '20',
+          'fill': 'rgba(0, 122, 255, 0.2)',
+          'class': 'pulse-ring'
+        });
+        markerGroup.appendChild(glowRing);
+        
+        // Main circle
+        const circle = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '10',
+          'fill': '#007aff',
+          'stroke': '#fff',
+          'stroke-width': '3',
+          'class': 'marker-circle',
+          'filter': 'drop-shadow(0 2px 6px rgba(0,0,0,0.3))'
+        });
+        markerGroup.appendChild(circle);
+        
+        // Inner white dot
+        const innerDot = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '4',
+          'fill': '#fff'
+        });
+        markerGroup.appendChild(innerDot);
+        
+        // Label
+        addLabel(markerGroup, svgX, svgY - 24, wp.name, '#007aff');
+      } else if (isStart) {
+        // Start marker - pulsing red circle
+        const pulseRing = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '15',
+          'fill': 'none',
+          'stroke': '#ff3b30',
+          'stroke-width': '2',
+          'class': 'pulse-ring'
+        });
+        markerGroup.appendChild(pulseRing);
+        
+        const circle = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '8',
+          'fill': '#ff3b30',
+          'stroke': '#fff',
+          'stroke-width': '2',
+          'class': 'marker-circle'
+        });
+        markerGroup.appendChild(circle);
+        
+        // Label
+        addLabel(markerGroup, svgX, svgY - 18, "You Are Here", '#ff3b30');
+      } else {
+        // Regular marker - yellow circle
+        const circle = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '8',
+          'fill': '#ffb700',
+          'stroke': '#fff',
+          'stroke-width': '2',
+          'class': 'marker-circle'
+        });
+        markerGroup.appendChild(circle);
+        
+        // Label (hidden by default, shown on hover)
+        addLabel(markerGroup, svgX, svgY - 18, wp.name, '#1a1a1a', true);
+      }
+      
+      // Click handler
+      markerGroup.style.cursor = 'pointer';
+      markerGroup.addEventListener('click', (e) => {
+        e.stopPropagation();
+        jumpTo(wp);
+      });
+      
+      markerLayer.appendChild(markerGroup);
+    });
+    
+    rebuildDropdown();
+  }
+  
+  // Add label to marker
+  function addLabel(parent, x, y, text, bgColor, hideByDefault = false) {
+    const labelGroup = createSVGElement('g', {
+      'class': 'marker-label-group',
+      'opacity': hideByDefault ? '0' : '1'
+    });
+    
+    // Measure text (approximate)
+    const textWidth = text.length * 7 + 24;
+    const textHeight = 24;
+    
+    // Background
+    const bg = createSVGElement('rect', {
+      'x': x - textWidth / 2,
+      'y': y - textHeight / 2,
+      'width': textWidth,
+      'height': textHeight,
+      'class': 'marker-label-bg',
+      'fill': bgColor
+    });
+    labelGroup.appendChild(bg);
+    
+    // Text
+    const label = createSVGElement('text', {
+      'x': x,
+      'y': y + 5,
+      'text-anchor': 'middle',
+      'class': 'marker-label'
+    });
+    label.textContent = text;
+    labelGroup.appendChild(label);
+    
+    // Hover effect for hidden labels
+    if (hideByDefault) {
+      parent.addEventListener('mouseenter', () => {
+        labelGroup.setAttribute('opacity', '1');
+      });
+      parent.addEventListener('mouseleave', () => {
+        labelGroup.setAttribute('opacity', '0');
+      });
+    }
+    
+    parent.appendChild(labelGroup);
+  }
+
+  // Dropdown & List Logic
+  function rebuildDropdown(){
+    const q = searchInput.value.trim().toLowerCase();
+    dropdown.innerHTML = "";
+    if(!q){ dropdown.classList.remove("show"); return; }
+    const matches = APP_DATA.waypoints.filter(w => w.name.toLowerCase().includes(q));
+    if(matches.length === 0) {
+        dropdown.innerHTML = `<div class="dropItem" style="cursor:default;color:var(--muted);text-align:center">No results found</div>`;
+        dropdown.classList.add("show"); return;
+    }
+    matches.slice(0,10).forEach(wp => {
+       const div = document.createElement("div"); div.className="dropItem";
+       div.innerHTML = `<div><b>${wp.name}</b>${wp.group?` <span style="font-size:12px;color:#888">[${wp.group}]</span>`:""}</div>`;
+       div.onclick = () => { searchInput.value=""; dropdown.classList.remove("show"); jumpTo(wp); };
+       dropdown.appendChild(div);
+    });
+    dropdown.classList.add("show");
+  }
+
+  function rebuildList(){
+    listBox.innerHTML = "";
+    let list = [...APP_DATA.waypoints].sort((a,b) => a.name.localeCompare(b.name));
+    if(!list.length) listBox.innerHTML = "<div style='color:#888;text-align:center'>No waypoints loaded.</div>";
+    list.forEach(wp => {
+       const div = document.createElement("div"); div.className="listItem";
+       div.innerHTML = `<div>${wp.group?`<span class="tag">${wp.group}</span>`:""}<b>${wp.name}</b></div><span style="color:var(--accent);font-size:12px">Go</span>`;
+       div.onclick = () => { listModal.classList.remove("show"); jumpTo(wp); };
+       listBox.appendChild(div);
+    });
+  }
+
+  // Events
+  el("homeBtn").onclick = () => { 
+    fitToScreen(); 
+    // Keep selection and info panel open if something is selected
+    if (state.selectedId) {
+      render(); // Re-render to show the marker at new zoom level
+    } else {
+      hideInfoPanel();
+    }
+  };
+  el("listBtn").onclick = () => { rebuildList(); listModal.classList.add("show"); };
+  el("closeList").onclick = () => listModal.classList.remove("show");
+  el("infoPanelClose").onclick = () => {
+    hideInfoPanel();
+    state.selectedId = null;
+    render();
+  };
+  searchInput.oninput = rebuildDropdown;
+
+  // Pointer events for pan
+  mapContainer.onpointerdown = e => {
+    mapContainer.setPointerCapture(e.pointerId);
+    state.pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    
+    if (state.pointers.size === 1) {
+      state.isPanning = true;
+      state.panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        vbX: viewBox.x,
+        vbY: viewBox.y
+      };
+      mapContainer.classList.add('panning');
+    } else if (state.pointers.size === 2) {
+      state.isPanning = false;
+      const pts = [...state.pointers.values()];
+      state.lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      state.lastPinchCenter = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    }
+  };
+
+  mapContainer.onpointermove = e => {
+    if (!state.pointers.has(e.pointerId)) return;
+    state.pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+
+    if (state.pointers.size === 2) {
+      // Pinch zoom
+      const pts = [...state.pointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const center = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      
+      if (state.lastPinchDist) {
+        const factor = state.lastPinchDist / dist;
+        zoomAt(factor, center.x, center.y);
+      }
+      
+      state.lastPinchDist = dist;
+      state.lastPinchCenter = center;
+    } else if (state.isPanning) {
+      // Pan
+      const dx = e.clientX - state.panStart.x;
+      const dy = e.clientY - state.panStart.y;
+      const rect = mapContainer.getBoundingClientRect();
+      const svgDx = dx * (viewBox.width / rect.width);
+      const svgDy = dy * (viewBox.height / rect.height);
+      
+      viewBox.x = clamp(state.panStart.vbX - svgDx, 0, viewBox.originalW - viewBox.width);
+      viewBox.y = clamp(state.panStart.vbY - svgDy, 0, viewBox.originalH - viewBox.height);
+      
+      applyViewBox();
+    }
+  };
+
+  mapContainer.onpointerup = mapContainer.onpointercancel = e => {
+    state.pointers.delete(e.pointerId);
+    state.lastPinchDist = null;
+    
+    if (state.isPanning && 
+        Math.hypot(e.clientX - state.panStart.x, e.clientY - state.panStart.y) < 5) {
+      // Click, not drag - close info panel
+      state.selectedId = null;
+      hideInfoPanel();
+      render();
+    }
+    
+    if (state.pointers.size === 1) {
+      const p = [...state.pointers.values()][0];
+      state.isPanning = true;
+      state.panStart = {
+        x: p.x,
+        y: p.y,
+        vbX: viewBox.x,
+        vbY: viewBox.y
+      };
+    } else {
+      state.isPanning = false;
+      mapContainer.classList.remove('panning');
+    }
+  };
+
+  // Wheel zoom
+  mapContainer.onwheel = e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 0.9 : 1.1;
+    zoomAt(factor, e.clientX, e.clientY);
+  };
+
+  // Prevent browser zoom on desktop
+  document.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  // Prevent iOS Safari gesture zoom
+  document.addEventListener('gesturestart', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+  
+  document.addEventListener('gesturechange', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+  
+  document.addEventListener('gestureend', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Initialize - SVG is already embedded
+  function loadSvg() {
+    // ViewBox already set from the embedded SVG
+    const vb = mapSvg.getAttribute('viewBox').split(' ').map(Number);
+    viewBox.x = vb[0];
+    viewBox.y = vb[1];
+    viewBox.width = vb[2];
+    viewBox.height = vb[3];
+    viewBox.originalW = vb[2];
+    viewBox.originalH = vb[3];
+    
+    // Initialize the map
+    init();
+  }
+
+  // Init
+  function init() {
+    fitToScreen();
+    render();
+  }
+
+  // Debounced resize with orientation change support
+  let resizeTimeout;
+  function handleResize() {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      fitToScreen();
+    }, 150);
+  }
+  
+  window.addEventListener('resize', handleResize);
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      fitToScreen();
+    }, 300);
+  });
+
+  // Start
+  loadSvg();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Campus Waypoints — DEV</title>
+  <style>
+    :root{
+      --bg:#0b1220; --panel:#111a2e; --text:#e9eefc; --muted:#a7b2d6;
+      --accent:#4ea1ff; --danger:#ff5b6e; --ok:#3ee6a8; --marker:#ffd54a;
+      --shadow: 0 8px 24px rgba(0,0,0,.35); --radius:14px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background: radial-gradient(1200px 800px at 30% 10%, #16254a 0%, var(--bg) 55%, #070b14 100%);
+      color:var(--text);
+      overflow:hidden;
+      touch-action: pan-x pan-y;
+    }
+    .app{height:100vh;display:grid;grid-template-rows:auto 1fr;overflow:hidden;}
+    
+    .topbar{
+      display:flex;gap:12px;align-items:center; justify-content:center;
+      padding:12px; position:relative;top:0;
+      backdrop-filter: blur(10px); background: rgba(10,16,30,.6);
+      border-bottom:1px solid rgba(255,255,255,.08); z-index:30;
+      flex-wrap: wrap;
+    }
+    .brand{display:flex;flex-direction:column;line-height:1.1;margin-right:auto;min-width:120px}
+    .brand b{font-size:14px}
+    .brand span{font-size:12px;color:var(--muted)}
+
+    .btn{
+      border:1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: var(--text);
+      padding:8px 10px; border-radius:10px; cursor:pointer; user-select:none; font-size:13px;
+      display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
+    }
+    .btn:hover{background:rgba(255,255,255,.10)}
+    .btn:active{transform:translateY(1px)}
+    .btn.ok{border-color: rgba(62,230,168,.55); background: rgba(62,230,168,.10)}
+    .btn.danger{border-color: rgba(255,91,110,.55); background: rgba(255,91,110,.10)}
+    .btn.primary{border-color: rgba(78,161,255,.55); background: rgba(78,161,255,.12)}
+
+    .searchWrap{position:relative;flex:0 1 320px;min-width:200px}
+    .searchIcon{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.7}
+    .search{
+      width:100%; padding:10px 12px 10px 38px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.14); background: rgba(17,26,46,.65);
+      color: var(--text); outline:none; font-size:14px;
+    }
+    .dropdown{
+      position:absolute; top:44px;left:0;right:0; background: rgba(17,26,46,.92);
+      border:1px solid rgba(255,255,255,.14); border-radius:14px; overflow:hidden;
+      box-shadow: var(--shadow); display:none; max-height:42vh; overflow:auto; z-index:50; text-align:left;
+    }
+    .dropdown.show{display:block}
+    .dropItem{
+      padding:10px 12px; display:flex;gap:10px;align-items:center; cursor:pointer; border-bottom:1px solid rgba(255,255,255,.08)
+    }
+    .dropItem:hover{background:rgba(255,255,255,.05)}
+    
+    /* Map Stage */
+    .stage{
+      position:relative;
+      overflow:hidden; 
+      background: transparent;
+      padding: 20px;
+    }
+    
+    .mapContainer{
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      cursor: grab;
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .mapContainer.panning { cursor: grabbing; }
+    
+    #mapSvgContainer{
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      user-select: none;
+      touch-action: none;
+      overflow: hidden;
+    }
+    
+    #mapSvg {
+      width: 100%;
+      height: 100%;
+      pointer-events: all;
+    }
+    
+    #mapImage {
+      pointer-events: none;
+    }
+    
+    #markerLayer {
+      pointer-events: none;
+    }
+    
+    .marker-group {
+      pointer-events: all;
+    }
+
+    /* SVG Markers */
+    .marker-circle {
+      cursor: pointer;
+      transition: r 0.15s ease-out, fill 0.15s ease-out;
+    }
+    .marker-circle:hover {
+      r: 12;
+      fill: #ffffff;
+    }
+    
+    .marker-label {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      font-size: 12px;
+      font-weight: 600;
+      fill: var(--text);
+      pointer-events: none;
+      user-select: none;
+    }
+    
+    .marker-label-bg {
+      fill: rgba(15, 23, 48, 0.9);
+      stroke: rgba(255, 255, 255, 0.15);
+      stroke-width: 1;
+      rx: 6;
+      ry: 6;
+    }
+    
+    .marker-pin {
+      cursor: pointer;
+    }
+    
+    .marker-glow {
+      animation: pulseGlow 2s infinite;
+    }
+    
+    @keyframes pulseGlow {
+      0% { opacity: 0.6; r: 15; }
+      50% { opacity: 0; r: 25; }
+      100% { opacity: 0; r: 15; }
+    }
+    
+    @keyframes pulseRing {
+      0% { opacity: 0.6; r: 15; }
+      100% { opacity: 0; r: 25; }
+    }
+    
+    .pulse-ring {
+      animation: pulseRing 2s infinite;
+    }
+
+    /* Modals */
+    .modalBackdrop{
+      position:fixed;inset:0; background:rgba(0,0,0,.55);
+      display:none; align-items:center; justify-content:center; z-index:100;
+      padding: 20px;
+    }
+    .modalBackdrop.show{display:flex}
+    .modal{
+      width:min(500px,92vw); border-radius:16px; border:1px solid rgba(255,255,255,.14);
+      background: rgba(17,26,46,.96); box-shadow: var(--shadow); overflow:hidden;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .modalHead{padding:12px 16px; display:flex; align-items:center; gap:10px; border-bottom:1px solid rgba(255,255,255,.10);}
+    .modalBody{padding:16px; display:grid; gap:16px; overflow-y:auto; flex:1;}
+    .row{display:grid;gap:8px}
+    label{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:0.5px;text-transform:uppercase}
+    
+    input[type="text"], textarea{
+      width:100%; padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,.14);
+      background:rgba(15,23,48,.65); color:var(--text); outline:none; font-size:14px;
+    }
+    textarea{ min-height:160px; font-family: monospace; font-size:12px; }
+    
+    .checkbox-row { display:flex; align-items:center; gap:10px; cursor:pointer; }
+    .checkbox-row input { width:16px; height:16px; cursor:pointer; accent-color: var(--danger); }
+    .checkbox-row span { font-size:14px; color:var(--text); }
+
+    .modalActions{
+      padding:12px 16px; display:flex; gap:10px; justify-content:flex-end;
+      border-top:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.1);
+    }
+
+    .listBox{display:grid;gap:8px;max-height:50vh;overflow-y:auto; padding-top:10px;}
+    .listItem{
+      padding:10px 12px; border:1px solid rgba(255,255,255,.12); border-radius:12px;
+      background: rgba(255,255,255,.04); cursor:pointer;
+      display:flex; justify-content:space-between; gap:10px; align-items:center;
+    }
+    .listItem:hover{background:rgba(255,255,255,.08)}
+    .tag{
+      font-size:11px; padding:2px 6px; border-radius:4px;
+      background:rgba(255,255,255,0.1); color:var(--accent); margin-right:6px; white-space:nowrap;
+    }
+    .small{font-size:12px;color:var(--muted);line-height:1.4}
+    .mono{font-family: monospace}
+    
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+      .topbar {
+        padding: 8px;
+        gap: 8px;
+      }
+      .brand {
+        font-size: 13px;
+        min-width: 100px;
+      }
+      .brand b { font-size: 13px; }
+      .brand span { font-size: 11px; }
+      .searchWrap {
+        flex: 1 1 100%;
+        order: 10;
+        min-width: 0;
+      }
+      .btn {
+        padding: 6px 8px;
+        font-size: 12px;
+        gap: 4px;
+      }
+      .stage {
+        padding: 12px;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .stage {
+        padding: 8px;
+      }
+      .topbar {
+        padding: 6px;
+        gap: 6px;
+      }
+      .brand {
+        margin-right: 0;
+      }
+      .modal {
+        width: 95vw;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <b>Waypoints</b>
+        <span id="statusText">Loading…</span>
+      </div>
+
+      <div class="searchWrap">
+        <span class="searchIcon">🔎</span>
+        <input id="searchInput" class="search" placeholder="Search place…" autocomplete="off" />
+        <div id="dropdown" class="dropdown"></div>
+      </div>
+
+      <button class="btn" id="homeBtn">⛶ Fit</button>
+      <button class="btn" id="listBtn">List</button>
+      <button class="btn ok" id="exportBtn">Export</button>
+      <button class="btn primary" id="importBtn">Import</button>
+      <button class="btn danger" id="clearBtn">Reset</button>
+    </div>
+
+    <div class="stage">
+      <div class="mapContainer" id="mapContainer">
+        <div id="mapSvgContainer">
+          <svg id="mapSvg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1164.2306 819.62">
+            <image id="mapImage" href="map.svg" width="1164.2306" height="819.62" />
+            <g id="markerLayer"></g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Name/Edit waypoint -->
+  <div class="modalBackdrop" id="nameModal">
+    <div class="modal">
+      <div class="modalHead">
+        <b id="nameModalTitle">Waypoint</b>
+        <span class="small mono" style="margin-left:auto" id="coordText"></span>
+        <button class="btn" id="cancelName">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="row">
+          <label>Place Name</label>
+          <input type="text" id="placeNameInput" placeholder="e.g. Main Entrance" />
+        </div>
+        <div class="row">
+          <label>Category (Optional)</label>
+          <input type="text" id="placeCategoryInput" placeholder="e.g. Science Block, Canteen..." />
+        </div>
+        <div class="row">
+          <label>Description</label>
+          <textarea id="placeDescriptionInput" placeholder="Add a description about this location..." style="min-height:80px; font-family: inherit; font-size:14px;"></textarea>
+        </div>
+        <div class="row">
+          <label>Image</label>
+          <input type="file" id="placeImageFile" accept="image/*" style="display:block;margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;" />
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Upload an image (will be stored as base64)</div>
+          <input type="text" id="placeImageInput" placeholder="Or paste image URL" />
+          <div id="imagePreview" style="margin-top:12px;display:none;">
+            <img id="previewImg" style="width:100%;max-height:150px;object-fit:cover;border-radius:8px;" />
+          </div>
+        </div>
+        <label class="checkbox-row">
+            <input type="checkbox" id="isStartInput">
+            <span>Set as "You Are Here" location</span>
+        </label>
+      </div>
+      <div class="modalActions">
+        <button class="btn danger" id="deleteWpBtn" style="margin-right:auto; display:none;">Delete</button>
+        <button class="btn primary" id="saveName">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full list modal -->
+  <div class="modalBackdrop" id="listModal">
+    <div class="modal">
+      <div class="modalHead">
+        <b>All Venues</b>
+        <button class="btn" id="closeList" style="margin-left:auto">Close</button>
+      </div>
+      <div class="modalBody">
+        <div id="listBox" class="listBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import JSON -->
+  <div class="modalBackdrop" id="importModal">
+    <div class="modal">
+      <div class="modalHead">
+        <b>Paste JSON</b>
+        <button class="btn" id="closeImport">Close</button>
+      </div>
+      <div class="modalBody">
+        <textarea id="jsonTextarea" placeholder="Paste exported JSON here…"></textarea>
+      </div>
+      <div class="modalActions">
+        <button class="btn primary" id="applyImport">Load Data</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const LS_KEY = "campus_waypoints_v2"; 
+  const defaultData = { version: 2, map: { src: "map.svg", naturalW: 1164.2306, naturalH: 819.62 }, waypoints: [] };
+  const el = (id) => document.getElementById(id);
+  
+  // Elements
+  const statusText = el("statusText");
+  const mapContainer = el("mapContainer");
+  const mapSvg = el("mapSvg");
+  const markerLayer = el("markerLayer");
+  const searchInput = el("searchInput");
+  const dropdown = el("dropdown");
+  const nameModal = el("nameModal");
+  const placeNameInput = el("placeNameInput");
+  const placeCategoryInput = el("placeCategoryInput");
+  const placeDescriptionInput = el("placeDescriptionInput");
+  const placeImageInput = el("placeImageInput");
+  const placeImageFile = el("placeImageFile");
+  const imagePreview = el("imagePreview");
+  const previewImg = el("previewImg");
+  const isStartInput = el("isStartInput");
+  const listModal = el("listModal");
+  const listBox = el("listBox");
+  const importModal = el("importModal");
+  
+  let currentImageBase64 = null; // Store current uploaded image
+
+  // SVG viewBox state
+  let viewBox = {
+    x: 0,
+    y: 0,
+    width: 1164.2306,
+    height: 819.62,
+    originalW: 1164.2306,
+    originalH: 819.62
+  };
+
+  // State
+  let state = {
+    data: loadFromLocal() ?? structuredClone(defaultData),
+    selectedId: null,
+    isPanning: false,
+    panStart: {x: 0, y: 0, vbX: 0, vbY: 0},
+    pointers: new Map(),
+    lastPinchDist: null,
+    lastPinchCenter: {x: 0, y: 0},
+    minZoom: 1,
+    maxZoom: 10,
+    pendingRel: null,
+    editingId: null
+  };
+
+  // Helpers
+  function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
+  function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+  function loadFromLocal(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)); }catch{ return null; } }
+  function saveToLocal(){ 
+    const dataStr = JSON.stringify(state.data);
+    const sizeKB = (dataStr.length / 1024).toFixed(1);
+    localStorage.setItem(LS_KEY, dataStr); 
+    setStatus(sizeKB); 
+  }
+  function setStatus(sizeKB){ 
+    const sizeText = sizeKB ? ` (${sizeKB}KB stored)` : '';
+    statusText.textContent = `${state.data.waypoints.length} total${sizeText}`; 
+  }
+
+  // Create SVG element helper
+  function createSVGElement(tag, attrs = {}) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs).forEach(([key, value]) => {
+      el.setAttribute(key, value);
+    });
+    return el;
+  }
+
+  // Convert screen coordinates to SVG coordinates
+  function screenToSvg(screenX, screenY) {
+    const rect = mapContainer.getBoundingClientRect();
+    const x = viewBox.x + (screenX - rect.left) * (viewBox.width / rect.width);
+    const y = viewBox.y + (screenY - rect.top) * (viewBox.height / rect.height);
+    return {x, y};
+  }
+
+  // Apply viewBox to SVG
+  function applyViewBox() {
+    mapSvg.setAttribute('viewBox', 
+      `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`
+    );
+  }
+
+  // Fit map to container
+  function fitToScreen() {
+    const rect = mapContainer.getBoundingClientRect();
+    const scaleX = rect.width / viewBox.originalW;
+    const scaleY = rect.height / viewBox.originalH;
+    const scale = Math.min(scaleX, scaleY);
+    
+    viewBox.width = rect.width / scale;
+    viewBox.height = rect.height / scale;
+    viewBox.x = (viewBox.originalW - viewBox.width) / 2;
+    viewBox.y = (viewBox.originalH - viewBox.height) / 2;
+    
+    state.minZoom = Math.min(viewBox.width / viewBox.originalW, viewBox.height / viewBox.originalH);
+    
+    applyViewBox();
+  }
+
+  // Zoom centered on a point
+  function zoomAt(factor, centerX, centerY) {
+    const svgPoint = screenToSvg(centerX, centerY);
+    
+    const newWidth = viewBox.width * factor;
+    const newHeight = viewBox.height * factor;
+    
+    const currentZoom = viewBox.originalW / viewBox.width;
+    const newZoom = viewBox.originalW / newWidth;
+    const clampedZoom = clamp(newZoom, state.minZoom, state.maxZoom);
+    
+    const actualNewWidth = viewBox.originalW / clampedZoom;
+    const actualNewHeight = viewBox.originalH / clampedZoom;
+    
+    const relX = (svgPoint.x - viewBox.x) / viewBox.width;
+    const relY = (svgPoint.y - viewBox.y) / viewBox.height;
+    
+    viewBox.width = actualNewWidth;
+    viewBox.height = actualNewHeight;
+    viewBox.x = svgPoint.x - relX * viewBox.width;
+    viewBox.y = svgPoint.y - relY * viewBox.height;
+    
+    viewBox.x = clamp(viewBox.x, 0, viewBox.originalW - viewBox.width);
+    viewBox.y = clamp(viewBox.y, 0, viewBox.originalH - viewBox.height);
+    
+    applyViewBox();
+  }
+
+  // Pan the view
+  function pan(dx, dy) {
+    const rect = mapContainer.getBoundingClientRect();
+    const svgDx = dx * (viewBox.width / rect.width);
+    const svgDy = dy * (viewBox.height / rect.height);
+    
+    viewBox.x = clamp(viewBox.x - svgDx, 0, viewBox.originalW - viewBox.width);
+    viewBox.y = clamp(viewBox.y - svgDy, 0, viewBox.originalH - viewBox.height);
+    
+    applyViewBox();
+  }
+
+  // Jump to waypoint
+  function jumpTo(wp) {
+    state.selectedId = wp.id;
+    
+    const svgX = wp.xRel * viewBox.originalW;
+    const svgY = wp.yRel * viewBox.originalH;
+    
+    const targetZoom = 3;
+    viewBox.width = viewBox.originalW / targetZoom;
+    viewBox.height = viewBox.originalH / targetZoom;
+    
+    viewBox.x = clamp(svgX - viewBox.width / 2, 0, viewBox.originalW - viewBox.width);
+    viewBox.y = clamp(svgY - viewBox.height / 2, 0, viewBox.originalH - viewBox.height);
+    
+    applyViewBox();
+    renderAll();
+  }
+
+  // Add label to marker
+  function addLabel(parent, x, y, text, bgColor, hideByDefault = false) {
+    const labelGroup = createSVGElement('g', {
+      'class': 'marker-label-group',
+      'opacity': hideByDefault ? '0' : '1'
+    });
+    
+    const textWidth = text.length * 7 + 20;
+    const textHeight = 22;
+    
+    const bg = createSVGElement('rect', {
+      'x': x - textWidth / 2,
+      'y': y - textHeight / 2,
+      'width': textWidth,
+      'height': textHeight,
+      'class': 'marker-label-bg'
+    });
+    labelGroup.appendChild(bg);
+    
+    const label = createSVGElement('text', {
+      'x': x,
+      'y': y + 4,
+      'text-anchor': 'middle',
+      'class': 'marker-label'
+    });
+    label.textContent = text;
+    labelGroup.appendChild(label);
+    
+    if (hideByDefault) {
+      parent.addEventListener('mouseenter', () => {
+        labelGroup.setAttribute('opacity', '1');
+      });
+      parent.addEventListener('mouseleave', () => {
+        labelGroup.setAttribute('opacity', '0');
+      });
+      // Touch support for mobile
+      parent.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        labelGroup.setAttribute('opacity', '1');
+        setTimeout(() => labelGroup.setAttribute('opacity', '0'), 2000);
+      });
+    }
+    
+    parent.appendChild(labelGroup);
+  }
+
+  // Render all markers
+  function renderAll() {
+    markerLayer.innerHTML = "";
+    
+    state.data.waypoints.forEach(wp => {
+      const isActive = (wp.id === state.selectedId);
+      const isStart = (wp.type === 'start');
+      const svgX = wp.xRel * viewBox.originalW;
+      const svgY = wp.yRel * viewBox.originalH;
+      
+      const markerGroup = createSVGElement('g', {
+        'data-marker-id': wp.id,
+        'class': 'marker-group',
+        'style': 'pointer-events: all;'
+      });
+      
+      if (isActive) {
+        // Active marker - draw pin with glow
+        const glowCircle = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY - 20,
+          'r': '20',
+          'fill': 'rgba(255, 213, 74, 0.3)',
+          'class': 'marker-glow'
+        });
+        markerGroup.appendChild(glowCircle);
+        
+        const pinPath = createSVGElement('path', {
+          'd': `M ${svgX} ${svgY-32} Q ${svgX-16} ${svgY-16}, ${svgX} ${svgY} Q ${svgX+16} ${svgY-16}, ${svgX} ${svgY-32} Z`,
+          'fill': '#ffd54a',
+          'stroke': '#fff',
+          'stroke-width': '2',
+          'class': 'marker-pin'
+        });
+        markerGroup.appendChild(pinPath);
+        
+        const innerCircle = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY - 16,
+          'r': '5',
+          'fill': '#16254a'
+        });
+        markerGroup.appendChild(innerCircle);
+      } else if (isStart) {
+        // Start marker - pulsing red
+        const pulseRing = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '15',
+          'fill': 'none',
+          'stroke': '#ff5b6e',
+          'stroke-width': '2',
+          'class': 'pulse-ring'
+        });
+        markerGroup.appendChild(pulseRing);
+        
+        const circle = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '6',
+          'fill': '#ff5b6e',
+          'stroke': '#fff',
+          'stroke-width': '2',
+          'class': 'marker-circle'
+        });
+        markerGroup.appendChild(circle);
+        
+        addLabel(markerGroup, svgX, svgY - 24, "YOU ARE HERE", 'rgba(255,91,110,0.9)');
+      } else {
+        // Regular marker
+        const circle = createSVGElement('circle', {
+          'cx': svgX,
+          'cy': svgY,
+          'r': '6',
+          'fill': '#ffd54a',
+          'stroke': '#fff',
+          'stroke-width': '1.5',
+          'class': 'marker-circle'
+        });
+        markerGroup.appendChild(circle);
+        
+        addLabel(markerGroup, svgX, svgY - 20, wp.name || 'Unnamed', 'rgba(15,23,48,0.9)', true);
+      }
+      
+      markerGroup.style.cursor = 'pointer';
+      markerGroup.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        openEditModal(wp);
+      }, { capture: true });
+      
+      markerGroup.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+      }, { capture: true });
+      
+      markerLayer.appendChild(markerGroup);
+    });
+    
+    rebuildDropdown();
+  }
+
+  // Handle image file upload
+  placeImageFile.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Check file size (limit to 2MB to keep JSON reasonable)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image too large! Please use an image under 2MB.');
+      placeImageFile.value = '';
+      return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      currentImageBase64 = event.target.result;
+      previewImg.src = currentImageBase64;
+      imagePreview.style.display = 'block';
+      placeImageInput.value = ''; // Clear URL input when file is uploaded
+    };
+    reader.readAsDataURL(file);
+  };
+  
+  // Handle URL input
+  placeImageInput.oninput = () => {
+    if (placeImageInput.value.trim()) {
+      currentImageBase64 = null; // Clear uploaded file if URL is entered
+      placeImageFile.value = '';
+      previewImg.src = placeImageInput.value.trim();
+      imagePreview.style.display = 'block';
+    } else {
+      imagePreview.style.display = 'none';
+    }
+  };
+
+  // Modals
+  function openEditModal(wp){
+    state.editingId = wp.id; state.pendingRel = null;
+    el("nameModalTitle").textContent = "Edit Waypoint";
+    placeNameInput.value = wp.name || ""; 
+    placeCategoryInput.value = wp.group || "";
+    placeDescriptionInput.value = wp.description || "";
+    placeImageInput.value = (wp.image && !wp.image.startsWith('data:')) ? wp.image : "";
+    currentImageBase64 = (wp.image && wp.image.startsWith('data:')) ? wp.image : null;
+    isStartInput.checked = (wp.type === 'start');
+    
+    // Show preview if image exists
+    if (wp.image) {
+      previewImg.src = wp.image;
+      imagePreview.style.display = 'block';
+    } else {
+      imagePreview.style.display = 'none';
+    }
+    
+    el("coordText").textContent = `x=${wp.xRel.toFixed(4)}, y=${wp.yRel.toFixed(4)}`;
+    el("deleteWpBtn").style.display = "inline-flex";
+    nameModal.classList.add("show");
+  }
+  
+  function openAddModal(xRel, yRel){
+    state.editingId = null; state.pendingRel = {xRel, yRel};
+    el("nameModalTitle").textContent = "New Waypoint";
+    placeNameInput.value = ""; 
+    placeCategoryInput.value = "";
+    placeDescriptionInput.value = "";
+    placeImageInput.value = "";
+    placeImageFile.value = "";
+    currentImageBase64 = null;
+    imagePreview.style.display = 'none';
+    isStartInput.checked = false;
+    
+    el("coordText").textContent = `x=${xRel.toFixed(4)}, y=${yRel.toFixed(4)}`;
+    el("deleteWpBtn").style.display = "none";
+    nameModal.classList.add("show");
+    setTimeout(() => placeNameInput.focus(), 50);
+  }
+
+  el("saveName").onclick = () => {
+    const name = placeNameInput.value.trim();
+    const grp = placeCategoryInput.value.trim();
+    const desc = placeDescriptionInput.value.trim();
+    
+    // Use base64 if uploaded, otherwise use URL
+    const img = currentImageBase64 || placeImageInput.value.trim();
+    
+    if(!name) return;
+    
+    if(isStartInput.checked) {
+        state.data.waypoints.forEach(w => delete w.type);
+    }
+
+    if(state.editingId){
+       const wp = state.data.waypoints.find(w => w.id === state.editingId);
+       if(wp) { 
+           wp.name = name; 
+           wp.group = grp;
+           wp.description = desc;
+           wp.image = img;
+           if(isStartInput.checked) wp.type = 'start';
+           else delete wp.type;
+       }
+    } else if(state.pendingRel){
+       state.data.waypoints.push({ 
+           id: uid(), 
+           name, 
+           group: grp,
+           description: desc,
+           image: img,
+           type: isStartInput.checked ? 'start' : undefined,
+           xRel: state.pendingRel.xRel, 
+           yRel: state.pendingRel.yRel 
+       });
+    }
+    
+    // Reset image state
+    currentImageBase64 = null;
+    placeImageFile.value = '';
+    
+    saveToLocal(); 
+    nameModal.classList.remove("show"); 
+    renderAll();
+  };
+  
+  el("deleteWpBtn").onclick = () => {
+    if(state.editingId && confirm("Delete this waypoint?")){
+       state.data.waypoints = state.data.waypoints.filter(w => w.id !== state.editingId);
+       if(state.selectedId === state.editingId) state.selectedId = null;
+       saveToLocal(); nameModal.classList.remove("show"); renderAll();
+    }
+  };
+
+  // Search / List
+  function rebuildDropdown(){
+    const q = searchInput.value.trim().toLowerCase();
+    dropdown.innerHTML = "";
+    if(!q){ dropdown.classList.remove("show"); return; }
+    const matches = state.data.waypoints.filter(w => (w.name || '').toLowerCase().includes(q)).slice(0,10);
+    matches.forEach(wp => {
+       const div = document.createElement("div"); div.className="dropItem";
+       div.innerHTML = `<div style="display:flex;flex-direction:column"><b>${wp.name}</b>${wp.group?`<span class="small">[${wp.group}]</span>`:""}</div>`;
+       div.onclick = () => { searchInput.value=""; dropdown.classList.remove("show"); jumpTo(wp); };
+       dropdown.appendChild(div);
+    });
+    if(dropdown.children.length) dropdown.classList.add("show");
+  }
+
+  function rebuildList(){
+    listBox.innerHTML = "";
+    let list = [...state.data.waypoints].sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+    if(!list.length) listBox.innerHTML = "<div class='small'>No waypoints yet. Click on the map to add one!</div>";
+    list.forEach(wp => {
+       const div = document.createElement("div"); div.className="listItem";
+       div.innerHTML = `<div>${wp.group?`<span class="tag">${wp.group}</span>`:""}<b>${wp.name || 'Unnamed'}</b></div><span class="small" style="color:var(--accent)">Go</span>`;
+       div.onclick = () => { listModal.classList.remove("show"); jumpTo(wp); };
+       listBox.appendChild(div);
+    });
+  }
+
+  // Events
+  el("homeBtn").onclick = fitToScreen;
+  el("listBtn").onclick = () => { rebuildList(); listModal.classList.add("show"); };
+  el("exportBtn").onclick = () => {
+     state.data.map.naturalW = viewBox.originalW; 
+     state.data.map.naturalH = viewBox.originalH;
+     const a = document.createElement("a");
+     a.href = URL.createObjectURL(new Blob([JSON.stringify(state.data,null,2)],{type:"application/json"}));
+     a.download="waypoints.json"; a.click();
+  };
+  el("importBtn").onclick = () => importModal.classList.add("show");
+  el("applyImport").onclick = () => {
+     try{ 
+       const j = JSON.parse(el("jsonTextarea").value); 
+       if(j.waypoints){ 
+         state.data=j; 
+         saveToLocal(); 
+         importModal.classList.remove("show"); 
+         renderAll(); 
+       } 
+     } catch(e){
+       alert("Invalid JSON format");
+     }
+  };
+  el("clearBtn").onclick = () => { 
+    if(confirm("Reset all waypoints? This cannot be undone.")) { 
+      state.data=structuredClone(defaultData); 
+      saveToLocal(); 
+      renderAll(); 
+      fitToScreen(); 
+    } 
+  };
+  el("cancelName").onclick = () => nameModal.classList.remove("show");
+  el("closeList").onclick = () => listModal.classList.remove("show");
+  el("closeImport").onclick = () => importModal.classList.remove("show");
+  searchInput.oninput = rebuildDropdown;
+
+  // Pointer events
+  mapSvg.onpointerdown = e => {
+    // Don't capture if clicking on a marker
+    if (e.target.closest('.marker-group')) {
+      return;
+    }
+    
+    mapSvg.setPointerCapture(e.pointerId);
+    state.pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+    
+    if (state.pointers.size === 1) {
+      state.isPanning = true;
+      state.panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        vbX: viewBox.x,
+        vbY: viewBox.y
+      };
+      mapContainer.classList.add('panning');
+    } else if (state.pointers.size === 2) {
+      state.isPanning = false;
+      const pts = [...state.pointers.values()];
+      state.lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      state.lastPinchCenter = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    }
+  };
+
+  mapSvg.onpointermove = e => {
+    if (!state.pointers.has(e.pointerId)) return;
+    state.pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+
+    if (state.pointers.size === 2) {
+      const pts = [...state.pointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const center = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      
+      if (state.lastPinchDist) {
+        const factor = state.lastPinchDist / dist;
+        zoomAt(factor, center.x, center.y);
+      }
+      
+      state.lastPinchDist = dist;
+      state.lastPinchCenter = center;
+    } else if (state.isPanning) {
+      const dx = e.clientX - state.panStart.x;
+      const dy = e.clientY - state.panStart.y;
+      const rect = mapContainer.getBoundingClientRect();
+      const svgDx = dx * (viewBox.width / rect.width);
+      const svgDy = dy * (viewBox.height / rect.height);
+      
+      viewBox.x = clamp(state.panStart.vbX - svgDx, 0, viewBox.originalW - viewBox.width);
+      viewBox.y = clamp(state.panStart.vbY - svgDy, 0, viewBox.originalH - viewBox.height);
+      
+      applyViewBox();
+    }
+  };
+
+  mapSvg.onpointerup = mapSvg.onpointercancel = e => {
+    state.pointers.delete(e.pointerId);
+    state.lastPinchDist = null;
+    
+    // Don't add waypoint if clicking on a marker
+    if (!e.target.closest('.marker-group') && 
+        state.isPanning && 
+        Math.hypot(e.clientX - state.panStart.x, e.clientY - state.panStart.y) < 5) {
+      // Click, not drag - add new waypoint
+      const svgPoint = screenToSvg(e.clientX, e.clientY);
+      if (svgPoint.x >= 0 && svgPoint.x <= viewBox.originalW && 
+          svgPoint.y >= 0 && svgPoint.y <= viewBox.originalH) {
+        const xRel = svgPoint.x / viewBox.originalW;
+        const yRel = svgPoint.y / viewBox.originalH;
+        state.selectedId = null;
+        renderAll();
+        openAddModal(xRel, yRel);
+      }
+    }
+    
+    if (state.pointers.size === 1) {
+      const p = [...state.pointers.values()][0];
+      state.isPanning = true;
+      state.panStart = {
+        x: p.x,
+        y: p.y,
+        vbX: viewBox.x,
+        vbY: viewBox.y
+      };
+    } else {
+      state.isPanning = false;
+      mapContainer.classList.remove('panning');
+    }
+  };
+
+  // Wheel zoom
+  mapSvg.onwheel = e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 0.9 : 1.1;
+    zoomAt(factor, e.clientX, e.clientY);
+  };
+
+  // Prevent browser zoom
+  document.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  document.addEventListener('gesturestart', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+  
+  document.addEventListener('gesturechange', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+  
+  document.addEventListener('gestureend', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Initialize
+  function init() {
+    // Load viewBox from saved data if available
+    if (state.data.map.naturalW && state.data.map.naturalH) {
+      viewBox.originalW = state.data.map.naturalW;
+      viewBox.originalH = state.data.map.naturalH;
+      viewBox.width = viewBox.originalW;
+      viewBox.height = viewBox.originalH;
+      mapSvg.setAttribute('viewBox', `0 0 ${viewBox.originalW} ${viewBox.originalH}`);
+    }
+    
+    fitToScreen();
+    setStatus();
+    renderAll();
+  }
+
+  // Debounced resize with orientation change support
+  let resizeTimeout;
+  function handleResize() {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      fitToScreen();
+    }, 150);
+  }
+  
+  window.addEventListener('resize', handleResize);
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      fitToScreen();
+    }, 300);
+  });
+
+  // Start
+  init();
+})();
+</script>
+</body>
+</html>
