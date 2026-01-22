@@ -852,13 +852,9 @@
     state.pointers.delete(e.pointerId);
     state.lastPinchDist = null;
     
-    if (state.isPanning && 
-        Math.hypot(e.clientX - state.panStart.x, e.clientY - state.panStart.y) < 5) {
-      // Click, not drag - close info panel
-      state.selectedId = null;
-      hideInfoPanel();
-      render();
-    }
+    // Don't deselect on click - selection persists
+    // Only updates when user selects a new location via search/directory
+    // or closes the info panel
     
     if (state.pointers.size === 1) {
       const p = [...state.pointers.values()][0];
