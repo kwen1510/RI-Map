@@ -288,44 +288,84 @@
     </div>
   </div>
 
-  <!-- Name/Edit waypoint -->
+  <!-- Manage Category Modal -->
   <div class="modalBackdrop" id="nameModal">
-    <div class="modal">
+    <div class="modal" style="max-height:95vh;">
       <div class="modalHead">
-        <b id="nameModalTitle">Waypoint</b>
+        <b id="nameModalTitle">Manage Location</b>
         <span class="small mono" style="margin-left:auto" id="coordText"></span>
         <button class="btn" id="cancelName">✕</button>
       </div>
       <div class="modalBody">
-        <div class="row">
-          <label>Place Name</label>
-          <input type="text" id="placeNameInput" placeholder="e.g. Main Entrance" />
+        <!-- Category Section -->
+        <div style="border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:16px; margin-bottom:16px;">
+            <div class="row">
+              <label>Category Name (Group)</label>
+              <input type="text" id="placeCategoryInput" placeholder="e.g. Block A" />
+            </div>
+            <div class="row">
+              <label>Category Description</label>
+              <textarea id="placeDescriptionInput" placeholder="Description for the category..." style="min-height:60px; font-family: inherit; font-size:14px;"></textarea>
+            </div>
+            <div class="row">
+              <label>Category Image</label>
+              <input type="file" id="placeImageFile" accept="image/*" style="display:block;margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;" />
+              <input type="text" id="placeImageInput" placeholder="Or paste image URL" />
+              <div id="imagePreview" style="margin-top:12px;display:none;">
+                <img id="previewImg" style="width:100%;max-height:100px;object-fit:cover;border-radius:8px;" />
+              </div>
+            </div>
         </div>
-        <div class="row">
-          <label>Category (Optional)</label>
-          <input type="text" id="placeCategoryInput" placeholder="e.g. Science Block, Canteen..." />
+
+        <!-- Locations Section -->
+        <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <label style="margin:0;">Locations in this Category</label>
+                <button class="btn small primary" id="addLocationBtn">+ Add Location</button>
+            </div>
+            <div id="subLocationList" class="listBox" style="max-height:200px; min-height:50px; background:rgba(0,0,0,0.2);"></div>
         </div>
-        <div class="row">
-          <label>Description</label>
-          <textarea id="placeDescriptionInput" placeholder="Add a description about this location..." style="min-height:80px; font-family: inherit; font-size:14px;"></textarea>
-        </div>
-        <div class="row">
-          <label>Image</label>
-          <input type="file" id="placeImageFile" accept="image/*" style="display:block;margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;" />
-          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Upload an image (will be stored as base64)</div>
-          <input type="text" id="placeImageInput" placeholder="Or paste image URL" />
-          <div id="imagePreview" style="margin-top:12px;display:none;">
-            <img id="previewImg" style="width:100%;max-height:150px;object-fit:cover;border-radius:8px;" />
-          </div>
-        </div>
-        <label class="checkbox-row">
+        
+        <label class="checkbox-row" style="margin-top:16px;">
             <input type="checkbox" id="isStartInput">
             <span>Set as "You Are Here" location</span>
         </label>
       </div>
       <div class="modalActions">
-        <button class="btn danger" id="deleteWpBtn" style="margin-right:auto; display:none;">Delete</button>
-        <button class="btn primary" id="saveName">Save</button>
+        <button class="btn danger" id="deleteWpBtn" style="margin-right:auto; display:none;">Delete Entire Category</button>
+        <button class="btn primary" id="saveName">Save All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub-Location Modal (Nested) -->
+  <div class="modalBackdrop" id="subLocModal" style="z-index:110;">
+    <div class="modal">
+      <div class="modalHead">
+        <b id="subLocTitle">Location Details</b>
+        <button class="btn" id="cancelSubLoc">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="row">
+          <label>Location Name</label>
+          <input type="text" id="subLocName" placeholder="e.g. Room 1" />
+        </div>
+        <div class="row">
+          <label>Description</label>
+          <textarea id="subLocDesc" placeholder="Description for this location..." style="min-height:80px; font-family: inherit; font-size:14px;"></textarea>
+        </div>
+        <div class="row">
+          <label>Image</label>
+          <input type="file" id="subLocFile" accept="image/*" style="display:block;margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;" />
+          <input type="text" id="subLocUrl" placeholder="Image URL" />
+          <div id="subLocPreviewBox" style="display:none;margin-top:8px;">
+             <img id="subLocPreview" style="height:100px;border-radius:4px;" />
+          </div>
+        </div>
+      </div>
+      <div class="modalActions">
+        <button class="btn danger" id="deleteSubLocBtn" style="margin-right:auto;">Delete</button>
+        <button class="btn primary" id="saveSubLoc">Done</button>
       </div>
     </div>
   </div>
@@ -361,31 +401,94 @@
 
 <script>
 (() => {
-  const LS_KEY = "campus_waypoints_v2"; 
+  const DB_NAME = "CampusMapDB";
+  const DB_VERSION = 1;
+  const STORE_NAME = "project_data";
   const defaultData = { version: 2, map: { src: "map.svg", naturalW: 1164.2306, naturalH: 819.62 }, waypoints: [] };
   const el = (id) => document.getElementById(id);
+  
+  // IndexedDB Helper
+  const dbParams = { db: null };
+
+  function initDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onerror = (e) => reject("DB Error");
+      request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      request.onsuccess = (e) => {
+        dbParams.db = e.target.result;
+        resolve(dbParams.db);
+      };
+    });
+  }
+
+  function saveToDB(key, val) {
+    return new Promise((resolve, reject) => {
+      if (!dbParams.db) return reject("DB not init");
+      const tx = dbParams.db.transaction([STORE_NAME], "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.put(val, key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function loadFromDB(key) {
+    return new Promise((resolve, reject) => {
+      if (!dbParams.db) return reject("DB not init");
+      const tx = dbParams.db.transaction([STORE_NAME], "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
   
   // Elements
   const statusText = el("statusText");
   const mapContainer = el("mapContainer");
   const mapSvg = el("mapSvg");
+
   const markerLayer = el("markerLayer");
   const searchInput = el("searchInput");
   const dropdown = el("dropdown");
   const nameModal = el("nameModal");
-  const placeNameInput = el("placeNameInput");
-  const placeCategoryInput = el("placeCategoryInput");
-  const placeDescriptionInput = el("placeDescriptionInput");
+  const placeCategoryInput = el("placeCategoryInput"); // Category Name
+  const placeDescriptionInput = el("placeDescriptionInput"); // Category Desc
   const placeImageInput = el("placeImageInput");
   const placeImageFile = el("placeImageFile");
   const imagePreview = el("imagePreview");
   const previewImg = el("previewImg");
   const isStartInput = el("isStartInput");
+  
+  const subLocationList = el("subLocationList");
+  const addLocationBtn = el("addLocationBtn");
+  
+  // Sub-Location Modal Elements
+  const subLocModal = el("subLocModal");
+  const subLocName = el("subLocName");
+  const subLocDesc = el("subLocDesc");
+  const subLocFile = el("subLocFile");
+  const subLocUrl = el("subLocUrl");
+  const subLocPreviewBox = el("subLocPreviewBox");
+  const subLocPreview = el("subLocPreview");
+  const saveSubLoc = el("saveSubLoc");
+  const deleteSubLocBtn = el("deleteSubLocBtn");
+  const cancelSubLoc = el("cancelSubLoc");
+
   const listModal = el("listModal");
   const listBox = el("listBox");
   const importModal = el("importModal");
   
-  let currentImageBase64 = null; // Store current uploaded image
+  let currentImageBase64 = null; // Category image
+  let currentSubLocImage = null; // Sub-location image
+  let tempLocations = []; // Temporary storage for locations while editing category
+  let editingSubLocIndex = -1; // Index of sub-location being edited
 
   // SVG viewBox state
   let viewBox = {
@@ -399,7 +502,7 @@
 
   // State
   let state = {
-    data: loadFromLocal() ?? structuredClone(defaultData),
+    data: structuredClone(defaultData), // Start with default, load async later
     selectedId: null,
     isPanning: false,
     panStart: {x: 0, y: 0, vbX: 0, vbY: 0},
@@ -409,19 +512,27 @@
     minZoom: 1,
     maxZoom: 10,
     pendingRel: null,
+    editingCluster: null,
     editingId: null
   };
 
   // Helpers
   function uid(){ return Math.random().toString(16).slice(2) + Date.now().toString(16); }
   function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
-  function loadFromLocal(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)); }catch{ return null; } }
-  function saveToLocal(){ 
-    const dataStr = JSON.stringify(state.data);
-    const sizeKB = (dataStr.length / 1024).toFixed(1);
-    localStorage.setItem(LS_KEY, dataStr); 
-    setStatus(sizeKB); 
+  
+  async function saveToLocal(){ 
+    try {
+      await saveToDB("main", state.data);
+      // Calc rough size
+      const json = JSON.stringify(state.data);
+      const sizeKB = (json.length / 1024).toFixed(1);
+      setStatus(sizeKB); 
+    } catch(e) {
+      console.error("Save failed", e);
+      statusText.textContent = "Save Error!";
+    }
   }
+  
   function setStatus(sizeKB){ 
     const sizeText = sizeKB ? ` (${sizeKB}KB stored)` : '';
     statusText.textContent = `${state.data.waypoints.length} total${sizeText}`; 
@@ -582,7 +693,8 @@
   function addLabel(parent, x, y, text, bgColor, hideByDefault = false) {
     const labelGroup = createSVGElement('g', {
       'class': 'marker-label-group',
-      'opacity': hideByDefault ? '0' : '1'
+      'opacity': hideByDefault ? '0' : '1',
+      'style': 'pointer-events: none;' // Allow clicks to pass through label
     });
     
     const textWidth = text.length * 7 + 20;
@@ -606,6 +718,10 @@
     label.textContent = text;
     labelGroup.appendChild(label);
     
+    // For hidden labels, we still want hover on the *marker* to show them,
+    // but the label itself shouldn't block clicks.
+    // The parent (markerGroup) handles mouseenter/leave.
+    
     if (hideByDefault) {
       parent.addEventListener('mouseenter', () => {
         labelGroup.setAttribute('opacity', '1');
@@ -615,13 +731,27 @@
       });
       // Touch support for mobile
       parent.addEventListener('touchstart', (e) => {
-        e.stopPropagation();
+        // e.stopPropagation(); // Don't stop propagation, let map handle it?
+        // Actually, if we touch the marker, we want to show label.
+        // But if label is pointer-events: none, we can't touch it.
+        // We touch the marker circle.
         labelGroup.setAttribute('opacity', '1');
         setTimeout(() => labelGroup.setAttribute('opacity', '0'), 2000);
       });
     }
     
     parent.appendChild(labelGroup);
+  }
+
+  // Handle click on a marker
+  function handleMarkerClick(wp) {
+    // Find all waypoints at this location (tolerance 0.001)
+    const cluster = state.data.waypoints.filter(w => 
+      Math.abs(w.xRel - wp.xRel) < 0.001 && 
+      Math.abs(w.yRel - wp.yRel) < 0.001
+    );
+    
+    openEditModal(cluster);
   }
 
   // Render all markers
@@ -708,16 +838,18 @@
         addLabel(markerGroup, svgX, svgY - 20, wp.name || 'Unnamed', 'rgba(15,23,48,0.9)', true);
       }
       
-      markerGroup.style.cursor = 'pointer';
+      // Event listeners
+      // Don't use capture:true, let it bubble from circle/path to group
+      markerGroup.addEventListener('pointerdown', (e) => {
+        // Prevent map panning when touching marker
+        e.stopPropagation();
+      });
+      
       markerGroup.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
-        openEditModal(wp);
-      }, { capture: true });
-      
-      markerGroup.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-      }, { capture: true });
+        handleMarkerClick(wp);
+      });
       
       markerLayer.appendChild(markerGroup);
     });
@@ -760,34 +892,75 @@
   };
 
   // Modals
-  function openEditModal(wp){
-    state.editingId = wp.id; state.pendingRel = null;
-    el("nameModalTitle").textContent = "Edit Waypoint";
-    placeNameInput.value = wp.name || ""; 
-    placeCategoryInput.value = wp.group || "";
-    placeDescriptionInput.value = wp.description || "";
-    placeImageInput.value = (wp.image && !wp.image.startsWith('data:')) ? wp.image : "";
-    currentImageBase64 = (wp.image && wp.image.startsWith('data:')) ? wp.image : null;
-    isStartInput.checked = (wp.type === 'start');
+  function openEditModal(cluster){
+    state.editingCluster = cluster;
+    state.pendingRel = null;
+    state.editingId = null; 
+
+    el("nameModalTitle").textContent = "Manage Location";
     
-    // Show preview if image exists
-    if (wp.image) {
-      previewImg.src = wp.image;
-      imagePreview.style.display = 'block';
+    // 1. Identify Category (The main container)
+    // Try to find a waypoint where name === group
+    // If not found, use the first one's group, or create a virtual one
+    let categoryWp = cluster.find(w => (w.name === w.group) || (w.type === 'start'));
+    
+    // If no explicit category WP, maybe we are editing a cluster of just items?
+    // Let's just pick the first one's group.
+    const groupName = categoryWp ? categoryWp.group : (cluster[0].group || "");
+    
+    // If we found a specific Category WP, load its details
+    if (categoryWp) {
+        placeCategoryInput.value = categoryWp.name;
+        placeDescriptionInput.value = categoryWp.description || "";
+        // Load image
+        currentImageBase64 = (categoryWp.image && categoryWp.image.startsWith('data:')) ? categoryWp.image : null;
+        placeImageInput.value = (categoryWp.image && !categoryWp.image.startsWith('data:')) ? categoryWp.image : "";
+        if (categoryWp.image) {
+          previewImg.src = categoryWp.image;
+          imagePreview.style.display = 'block';
+        } else {
+          imagePreview.style.display = 'none';
+        }
+        isStartInput.checked = (categoryWp.type === 'start');
     } else {
-      imagePreview.style.display = 'none';
+        // Fallback: Use the group name from the first item
+        placeCategoryInput.value = groupName;
+        placeDescriptionInput.value = "";
+        placeImageInput.value = "";
+        placeImageFile.value = "";
+        currentImageBase64 = null;
+        imagePreview.style.display = 'none';
+        isStartInput.checked = false;
     }
+
+    // 2. Identify Sub-locations
+    // These are all WPs in the cluster that are NOT the category WP
+    // BUT we must filter by name != group to distinguish items from category
+    const subWps = cluster.filter(w => w !== categoryWp && w.name !== w.group);
     
-    el("coordText").textContent = `x=${wp.xRel.toFixed(4)}, y=${wp.yRel.toFixed(4)}`;
+    // Convert to tempLocations format
+    tempLocations = subWps.map(w => ({
+        id: w.id, 
+        name: w.name,
+        description: w.description,
+        image: w.image,
+        group: w.group
+    }));
+    
+    updateSubLocationList();
+    
+    el("coordText").textContent = `x=${cluster[0].xRel.toFixed(4)}, y=${cluster[0].yRel.toFixed(4)}`;
     el("deleteWpBtn").style.display = "inline-flex";
     nameModal.classList.add("show");
   }
   
   function openAddModal(xRel, yRel){
-    state.editingId = null; state.pendingRel = {xRel, yRel};
-    el("nameModalTitle").textContent = "New Waypoint";
-    placeNameInput.value = ""; 
-    placeCategoryInput.value = "";
+    state.editingCluster = null; 
+    state.pendingRel = {xRel, yRel};
+    
+    el("nameModalTitle").textContent = "New Location";
+    
+    placeCategoryInput.value = ""; 
     placeDescriptionInput.value = "";
     placeImageInput.value = "";
     placeImageFile.value = "";
@@ -795,52 +968,185 @@
     imagePreview.style.display = 'none';
     isStartInput.checked = false;
     
+    tempLocations = [];
+    updateSubLocationList();
+    
     el("coordText").textContent = `x=${xRel.toFixed(4)}, y=${yRel.toFixed(4)}`;
     el("deleteWpBtn").style.display = "none";
     nameModal.classList.add("show");
-    setTimeout(() => placeNameInput.focus(), 50);
+    setTimeout(() => placeCategoryInput.focus(), 50);
   }
+  
+  function updateSubLocationList() {
+    subLocationList.innerHTML = "";
+    if (tempLocations.length === 0) {
+      subLocationList.innerHTML = '<div class="small" style="padding:10px;text-align:center">No locations added yet.</div>';
+      return;
+    }
+    
+    tempLocations.forEach((loc, index) => {
+      const div = document.createElement("div");
+      div.className = "listItem";
+      div.style.padding = "8px 12px";
+      div.style.marginBottom = "4px";
+      div.innerHTML = `<div><b>${loc.name}</b></div><button class="btn small">Edit</button>`;
+      div.onclick = (e) => {
+        openSubLocModal(index);
+      };
+      subLocationList.appendChild(div);
+    });
+  }
+  
+  // Add Location Button
+  addLocationBtn.onclick = () => {
+    openSubLocModal(-1); // -1 means new
+  };
+  
+  // Sub Location Modal Logic
+  function openSubLocModal(index) {
+    editingSubLocIndex = index;
+    el("subLocTitle").textContent = index === -1 ? "Add Location" : "Edit Location";
+    
+    if (index > -1) {
+      const loc = tempLocations[index];
+      subLocName.value = loc.name || "";
+      subLocDesc.value = loc.description || "";
+      
+      currentSubLocImage = (loc.image && loc.image.startsWith('data:')) ? loc.image : null;
+      subLocUrl.value = (loc.image && !loc.image.startsWith('data:')) ? loc.image : "";
+      
+      if (loc.image) {
+        subLocPreview.src = loc.image;
+        subLocPreviewBox.style.display = 'block';
+      } else {
+        subLocPreviewBox.style.display = 'none';
+      }
+      
+      deleteSubLocBtn.style.display = "inline-flex";
+    } else {
+      subLocName.value = "";
+      subLocDesc.value = "";
+      subLocUrl.value = "";
+      subLocFile.value = "";
+      currentSubLocImage = null;
+      subLocPreviewBox.style.display = 'none';
+      deleteSubLocBtn.style.display = "none";
+    }
+    
+    subLocModal.classList.add("show");
+    setTimeout(() => subLocName.focus(), 50);
+  }
+  
+  // Sub Loc Image Handler
+  subLocFile.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image too large! Please use an image under 2MB.');
+      subLocFile.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      currentSubLocImage = event.target.result;
+      subLocPreview.src = currentSubLocImage;
+      subLocPreviewBox.style.display = 'block';
+      subLocUrl.value = '';
+    };
+    reader.readAsDataURL(file);
+  };
+  
+  subLocUrl.oninput = () => {
+    if (subLocUrl.value.trim()) {
+      currentSubLocImage = null;
+      subLocFile.value = '';
+      subLocPreview.src = subLocUrl.value.trim();
+      subLocPreviewBox.style.display = 'block';
+    } else {
+      subLocPreviewBox.style.display = 'none';
+    }
+  };
+  
+  cancelSubLoc.onclick = () => subLocModal.classList.remove("show");
+  
+  saveSubLoc.onclick = () => {
+    const name = subLocName.value.trim();
+    if (!name) return;
+    
+    const img = currentSubLocImage || subLocUrl.value.trim();
+    const newLoc = {
+      name: name,
+      description: subLocDesc.value.trim(),
+      image: img
+    };
+    
+    if (editingSubLocIndex > -1) {
+      // Keep other props if updating
+      tempLocations[editingSubLocIndex] = { ...tempLocations[editingSubLocIndex], ...newLoc };
+    } else {
+      tempLocations.push(newLoc);
+    }
+    
+    updateSubLocationList();
+    subLocModal.classList.remove("show");
+  };
+  
+  deleteSubLocBtn.onclick = () => {
+    if (confirm("Remove this location?")) {
+      tempLocations.splice(editingSubLocIndex, 1);
+      updateSubLocationList();
+      subLocModal.classList.remove("show");
+    }
+  };
 
   el("saveName").onclick = () => {
-    const name = placeNameInput.value.trim();
-    const grp = placeCategoryInput.value.trim();
-    const desc = placeDescriptionInput.value.trim();
+    const catName = placeCategoryInput.value.trim();
+    if(!catName) { alert("Category name is required."); return; }
     
-    // Use base64 if uploaded, otherwise use URL
-    const img = currentImageBase64 || placeImageInput.value.trim();
+    const catDesc = placeDescriptionInput.value.trim();
+    const catImg = currentImageBase64 || placeImageInput.value.trim();
+    const isStart = isStartInput.checked;
     
-    if(!name) return;
+    // Determine coordinates
+    const x = state.editingCluster ? state.editingCluster[0].xRel : state.pendingRel.xRel;
+    const y = state.editingCluster ? state.editingCluster[0].yRel : state.pendingRel.yRel;
     
-    if(isStartInput.checked) {
-        state.data.waypoints.forEach(w => delete w.type);
-    }
-
-    if(state.editingId){
-       const wp = state.data.waypoints.find(w => w.id === state.editingId);
-       if(wp) { 
-           wp.name = name; 
-           wp.group = grp;
-           wp.description = desc;
-           wp.image = img;
-           if(isStartInput.checked) wp.type = 'start';
-           else delete wp.type;
-       }
-    } else if(state.pendingRel){
-       state.data.waypoints.push({ 
-           id: uid(), 
-           name, 
-           group: grp,
-           description: desc,
-           image: img,
-           type: isStartInput.checked ? 'start' : undefined,
-           xRel: state.pendingRel.xRel, 
-           yRel: state.pendingRel.yRel 
-       });
+    // 1. Remove all old waypoints in this cluster from the main data
+    if (state.editingCluster) {
+        const idsToRemove = state.editingCluster.map(w => w.id);
+        state.data.waypoints = state.data.waypoints.filter(w => !idsToRemove.includes(w.id));
     }
     
-    // Reset image state
+    // 2. Create the Category Waypoint
+    const categoryWp = {
+        id: uid(),
+        name: catName,
+        group: catName, // Group is same as Name for the container
+        description: catDesc,
+        image: catImg,
+        xRel: x,
+        yRel: y,
+        type: isStart ? 'start' : undefined
+    };
+    state.data.waypoints.push(categoryWp);
+    
+    // 3. Create Sub-Location Waypoints
+    tempLocations.forEach(loc => {
+        state.data.waypoints.push({
+            id: uid(), 
+            name: loc.name,
+            group: catName, // Linked to category
+            description: loc.description,
+            image: loc.image,
+            xRel: x,
+            yRel: y
+        });
+    });
+    
+    // Reset state
     currentImageBase64 = null;
     placeImageFile.value = '';
+    state.editingCluster = null;
     
     saveToLocal(); 
     nameModal.classList.remove("show"); 
@@ -848,10 +1154,13 @@
   };
   
   el("deleteWpBtn").onclick = () => {
-    if(state.editingId && confirm("Delete this waypoint?")){
-       state.data.waypoints = state.data.waypoints.filter(w => w.id !== state.editingId);
-       if(state.selectedId === state.editingId) state.selectedId = null;
-       saveToLocal(); nameModal.classList.remove("show"); renderAll();
+    if(state.editingCluster && confirm("Delete this entire category and all its locations?")){
+       const idsToRemove = state.editingCluster.map(w => w.id);
+       state.data.waypoints = state.data.waypoints.filter(w => !idsToRemove.includes(w.id));
+       state.selectedId = null;
+       saveToLocal(); 
+       nameModal.classList.remove("show"); 
+       renderAll();
     }
   };
 
@@ -860,10 +1169,40 @@
     const q = searchInput.value.trim().toLowerCase();
     dropdown.innerHTML = "";
     if(!q){ dropdown.classList.remove("show"); return; }
-    const matches = state.data.waypoints.filter(w => (w.name || '').toLowerCase().includes(q)).slice(0,10);
-    matches.forEach(wp => {
+    
+    let matches = state.data.waypoints.filter(w => 
+      (w.name || '').toLowerCase().includes(q) || 
+      (w.group || '').toLowerCase().includes(q)
+    );
+    
+    // Sort matches: Exact name match first, then starts with name, then others
+    matches.sort((a, b) => {
+        const aName = (a.name || '').toLowerCase();
+        const bName = (b.name || '').toLowerCase();
+        const aGroup = (a.group || '').toLowerCase();
+        const bGroup = (b.group || '').toLowerCase();
+        
+        if (aName === q && bName !== q) return -1;
+        if (bName === q && aName !== q) return 1;
+        
+        if (aGroup === q && bGroup !== q) return -1;
+        if (bGroup === q && aGroup !== q) return 1;
+        
+        if (aName.startsWith(q) && !bName.startsWith(q)) return -1;
+        if (bName.startsWith(q) && !aName.startsWith(q)) return 1;
+        
+        return aName.localeCompare(bName);
+    });
+    
+    matches.slice(0,10).forEach(wp => {
        const div = document.createElement("div"); div.className="dropItem";
-       div.innerHTML = `<div style="display:flex;flex-direction:column"><b>${wp.name}</b>${wp.group?`<span class="small">[${wp.group}]</span>`:""}</div>`;
+       
+       let displayName = wp.name;
+       if (wp.group && wp.group.toLowerCase() !== wp.name.toLowerCase()) {
+         displayName = `${wp.name} <span class="small">[${wp.group}]</span>`;
+       }
+       
+       div.innerHTML = `<div style="display:flex;flex-direction:column"><b>${displayName}</b></div>`;
        div.onclick = () => { searchInput.value=""; dropdown.classList.remove("show"); jumpTo(wp); };
        dropdown.appendChild(div);
     });
@@ -876,7 +1215,13 @@
     if(!list.length) listBox.innerHTML = "<div class='small'>No waypoints yet. Click on the map to add one!</div>";
     list.forEach(wp => {
        const div = document.createElement("div"); div.className="listItem";
-       div.innerHTML = `<div>${wp.group?`<span class="tag">${wp.group}</span>`:""}<b>${wp.name || 'Unnamed'}</b></div><span class="small" style="color:var(--accent)">Go</span>`;
+       
+       let tag = "";
+       if (wp.group && wp.group.toLowerCase() !== wp.name.toLowerCase()) {
+         tag = `<span class="tag">${wp.group}</span>`;
+       }
+       
+       div.innerHTML = `<div>${tag}<b>${wp.name || 'Unnamed'}</b></div><span class="small" style="color:var(--accent)">Go</span>`;
        div.onclick = () => { listModal.classList.remove("show"); jumpTo(wp); };
        listBox.appendChild(div);
     });
@@ -1042,7 +1387,17 @@
   }, { passive: false });
 
   // Initialize
-  function init() {
+  async function init() {
+    try {
+      await initDB();
+      const saved = await loadFromDB("main");
+      if (saved) {
+        state.data = saved;
+      }
+    } catch(e) {
+      console.error("DB Load Error", e);
+    }
+
     // Load viewBox from saved data if available
     if (state.data.map.naturalW && state.data.map.naturalH) {
       viewBox.originalW = state.data.map.naturalW;
@@ -1053,7 +1408,9 @@
     }
     
     fitToScreen();
-    setStatus();
+    // Update status
+    const json = JSON.stringify(state.data);
+    setStatus((json.length / 1024).toFixed(1));
     renderAll();
   }
 
