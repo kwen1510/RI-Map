@@ -468,12 +468,32 @@
 
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
-  // Convert screen coordinates to SVG coordinates
+  // Convert screen coordinates to SVG coordinates (handling "meet" aspect ratio)
   function screenToSvg(screenX, screenY) {
     const rect = mapContainer.getBoundingClientRect();
-    const x = viewBox.x + (screenX - rect.left) * (viewBox.width / rect.width);
-    const y = viewBox.y + (screenY - rect.top) * (viewBox.height / rect.height);
-    return {x, y};
+    
+    // Calculate how the SVG is scaled/positioned within the container
+    const scaleX = rect.width / viewBox.width;
+    const scaleY = rect.height / viewBox.height;
+    const scale = Math.min(scaleX, scaleY);
+    
+    // Calculate the actual rendered dimensions of the SVG content
+    const renderW = viewBox.width * scale;
+    const renderH = viewBox.height * scale;
+    
+    // Calculate offsets (centering)
+    const offsetX = (rect.width - renderW) / 2;
+    const offsetY = (rect.height - renderH) / 2;
+    
+    // Convert screen coordinates relative to container
+    const containerX = screenX - rect.left;
+    const containerY = screenY - rect.top;
+    
+    // Convert to SVG coordinates
+    const svgX = viewBox.x + (containerX - offsetX) / scale;
+    const svgY = viewBox.y + (containerY - offsetY) / scale;
+    
+    return {x: svgX, y: svgY};
   }
   
   // Create SVG element helper
@@ -504,7 +524,7 @@
     viewBox.x = (viewBox.originalW - viewBox.width) / 2;
     viewBox.y = (viewBox.originalH - viewBox.height) / 2;
     
-    state.minZoom = Math.min(viewBox.width / viewBox.originalW, viewBox.height / viewBox.originalH);
+    state.minZoom = Math.min(viewBox.originalW / viewBox.width, viewBox.originalH / viewBox.height);
     
     applyViewBox();
   }
@@ -533,9 +553,18 @@
     viewBox.x = svgPoint.x - relX * viewBox.width;
     viewBox.y = svgPoint.y - relY * viewBox.height;
     
-    // Clamp to bounds
-    viewBox.x = clamp(viewBox.x, 0, viewBox.originalW - viewBox.width);
-    viewBox.y = clamp(viewBox.y, 0, viewBox.originalH - viewBox.height);
+    // Clamp to bounds (center if zoomed out)
+    if (viewBox.width > viewBox.originalW) {
+      viewBox.x = (viewBox.originalW - viewBox.width) / 2;
+    } else {
+      viewBox.x = clamp(viewBox.x, 0, viewBox.originalW - viewBox.width);
+    }
+    
+    if (viewBox.height > viewBox.originalH) {
+      viewBox.y = (viewBox.originalH - viewBox.height) / 2;
+    } else {
+      viewBox.y = clamp(viewBox.y, 0, viewBox.originalH - viewBox.height);
+    }
     
     applyViewBox();
   }
@@ -543,11 +572,30 @@
   // Pan the view
   function pan(dx, dy) {
     const rect = mapContainer.getBoundingClientRect();
-    const svgDx = dx * (viewBox.width / rect.width);
-    const svgDy = dy * (viewBox.height / rect.height);
     
-    viewBox.x = clamp(viewBox.x - svgDx, 0, viewBox.originalW - viewBox.width);
-    viewBox.y = clamp(viewBox.y - svgDy, 0, viewBox.originalH - viewBox.height);
+    // Calculate scale as in screenToSvg
+    const scaleX = rect.width / viewBox.width;
+    const scaleY = rect.height / viewBox.height;
+    const scale = Math.min(scaleX, scaleY);
+    
+    const svgDx = dx / scale;
+    const svgDy = dy / scale;
+    
+    viewBox.x -= svgDx;
+    viewBox.y -= svgDy;
+    
+    // Clamp to bounds (center if zoomed out)
+    if (viewBox.width > viewBox.originalW) {
+      viewBox.x = (viewBox.originalW - viewBox.width) / 2;
+    } else {
+      viewBox.x = clamp(viewBox.x, 0, viewBox.originalW - viewBox.width);
+    }
+    
+    if (viewBox.height > viewBox.originalH) {
+      viewBox.y = (viewBox.originalH - viewBox.height) / 2;
+    } else {
+      viewBox.y = clamp(viewBox.y, 0, viewBox.originalH - viewBox.height);
+    }
     
     applyViewBox();
   }
